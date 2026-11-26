@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SKYHAWK — Island Courier</title>
+<style>
+  :root {
+    --glass: rgba(8, 24, 38, 0.72);
+    --glass-line: rgba(140, 220, 255, 0.35);
+    --amber: #ffd23f;
+    --cyan: #7fe3ff;
+    --ink: #eaf6ff;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: #0a1622; font-family: "Segoe UI", system-ui, sans-serif; color: var(--ink); }
+  #scene { position: fixed; inset: 0; }
+  #scene canvas { display: block; }
+
+  /* ---------- HUD: lit glass instruments ---------- */
+  #hud { position: fixed; inset: 0; pointer-events: none; opacity: 0; transition: opacity 0.3s; z-index: 5; }
+  #hud.visible { opacity: 1; }
+  .panel { position: absolute; background: var(--glass); border: 1px solid var(--glass-line); border-radius: 10px; padding: 10px 14px; backdrop-filter: blur(3px); box-shadow: 0 0 18px rgba(0, 180, 255, 0.18), inset 0 0 24px rgba(80, 200, 255, 0.08); }
+  .panel .label { font-size: 10px; letter-spacing: 0.22em; color: var(--cyan); opacity: 0.85; }
+  .panel .big { font-size: 30px; font-weight: 700; line-height: 1.05; text-shadow: 0 0 12px rgba(127, 227, 255, 0.65); font-variant-numeric: tabular-nums; }
+  .panel .sub { font-size: 13px; color: #bfe6ff; font-variant-numeric: tabular-nums; }
+
+  #hud-flight { left: 18px; bottom: 18px; display: flex; gap: 18px; align-items: center; }
+  #hud-attitude { width: 104px; height: 104px; }
+  #hud-flight .col { display: flex; flex-direction: column; gap: 2px; min-width: 110px; }
+  #hud-flight .big { font-size: 34px; }
+  #hud-flight .sub { font-size: 12px; }
+
+  #hud-top { top: 16px; left: 50%; transform: translateX(-50%); text-align: center; min-width: 420px; }
+  #hud-objective { font-size: 17px; font-weight: 600; letter-spacing: 0.02em; }
+  #hud-message { font-size: 14px; color: var(--amber); margin-top: 3px; min-height: 18px; }
+  #hud-compass { position: relative; height: 26px; margin-top: 6px; overflow: hidden; border-top: 1px solid var(--glass-line); }
+  #hud-compass .tick { position: absolute; top: 4px; transform: translateX(-50%); font-size: 11px; color: #9fd8ff; }
+  #hud-compass .tick.major { font-size: 13px; font-weight: 700; color: #fff; }
+  #hud-compass .needle { position: absolute; left: 50%; top: -2px; transform: translateX(-50%); color: var(--amber); font-size: 13px; }
+
+  #hud-score-box { top: 16px; right: 18px; text-align: right; }
+  #hud-score-box .big { color: var(--amber); }
+  #hud-fuel-box { right: 18px; bottom: 18px; width: 210px; }
+  .bar { height: 12px; background: rgba(255,255,255,0.12); border-radius: 6px; overflow: hidden; margin: 5px 0 8px; }
+  .bar > div { height: 100%; border-radius: 6px; transition: width 0.2s; }
+  #hud-fuel-fill { background: linear-gradient(90deg, #2fae5f, #7be495); width: 100%; }
+  #hud-fuel-fill.low { background: linear-gradient(90deg, #e23b2e, #ff8c1a); }
+  #hud-thr-fill { background: linear-gradient(90deg, #1f8fff, #7fe3ff); width: 0%; }
+  #hud-warn { position: absolute; top: 108px; left: 50%; transform: translateX(-50%); color: #ff5a4a; font-weight: 800; font-size: 19px; letter-spacing: 0.08em; text-shadow: 0 0 14px rgba(255, 60, 40, 0.8); text-align: center; }
+
+  /* ---------- screens ---------- */
+  .screen { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; flex-direction: column; text-align: center; z-index: 10; background: radial-gradient(ellipse at center, rgba(4, 16, 28, 0.25) 0%, rgba(4, 16, 28, 0.72) 100%); }
+  .screen.visible { display: flex; }
+  .game-title { font-size: 72px; font-weight: 900; letter-spacing: 0.14em; margin: 0; color: #fff; text-shadow: 0 0 30px rgba(127, 227, 255, 0.9), 0 4px 0 rgba(0,0,0,0.35); }
+  .game-sub { font-size: 20px; letter-spacing: 0.42em; color: var(--amber); margin: 6px 0 26px; }
+  .game-tag { font-size: 16px; color: #cfeaff; max-width: 560px; line-height: 1.5; margin: 0 0 28px; }
+  .missions { display: flex; gap: 16px; margin-bottom: 28px; }
+  .mission-card { width: 220px; background: var(--glass); border: 1px solid var(--glass-line); border-radius: 12px; padding: 16px; cursor: pointer; transition: transform 0.15s, border-color 0.15s; text-align: left; }
+  .mission-card:hover { transform: translateY(-4px); border-color: var(--amber); }
+  .mission-card .num { font-size: 12px; color: var(--cyan); letter-spacing: 0.2em; }
+  .mission-card h3 { margin: 6px 0 8px; font-size: 19px; }
+  .mission-card p { margin: 0; font-size: 13px; line-height: 1.45; color: #cfeaff; }
+  .btn { pointer-events: auto; cursor: pointer; font-size: 18px; font-weight: 700; letter-spacing: 0.08em; color: #08222f; background: linear-gradient(180deg, #ffd23f, #ff9d1c); border: none; border-radius: 10px; padding: 14px 34px; box-shadow: 0 6px 0 #b96f00, 0 10px 24px rgba(0,0,0,0.4); }
+  .btn:active { transform: translateY(3px); box-shadow: 0 3px 0 #b96f00; }
+  .btn.ghost { background: transparent; color: var(--ink); border: 1px solid var(--glass-line); box-shadow: none; font-size: 15px; padding: 10px 22px; margin-top: 14px; }
+  .keys { margin-top: 26px; font-size: 13px; color: #9fc6e2; line-height: 1.8; }
+  .keys b { color: #fff; background: rgba(255,255,255,0.12); border-radius: 4px; padding: 1px 7px; font-weight: 600; }
+  .end-title { font-size: 56px; font-weight: 900; letter-spacing: 0.1em; margin: 0 0 10px; color: #fff; text-shadow: 0 0 26px rgba(127, 227, 255, 0.8); }
+  .end-score { font-size: 20px; color: var(--amber); margin-bottom: 26px; }
+  .row { display: flex; gap: 14px; }
+</style>
+</head>
+<body>
+<div id="scene"></div>
+
+<!-- HUD -->
+<div id="hud">
+  <div class="panel" id="hud-top">
+    <div id="hud-objective">Pick a mission — 1, 2 or 3</div>
+    <div id="hud-message"></div>
+    <div id="hud-compass"></div>
+  </div>
+  <div class="panel" id="hud-score-box">
+    <div class="label">TIME LEFT</div>
+    <div class="big" id="hud-timer">04:00</div>
+    <div class="sub" id="hud-score">SCORE 0</div>
+  </div>
+  <div class="panel" id="hud-flight">
+    <canvas id="hud-attitude" width="104" height="104"></canvas>
+    <div class="col">
+      <div class="label">ALTITUDE</div>
+      <div class="big" id="hud-alt">0 ft</div>
+      <div class="sub" id="hud-vs">+0 fpm</div>
+    </div>
+    <div class="col">
+      <div class="label">AIRSPEED</div>
+      <div class="big" id="hud-spd">0 kt</div>
+      <div class="sub" id="hud-hdg">000° N</div>
+    </div>
+  </div>
+  <div class="panel" id="hud-fuel-box">
+    <div class="label" id="hud-fuel-text">FUEL 100%</div>
+    <div class="bar"><div id="hud-fuel-fill"></div></div>
+    <div class="label">THROTTLE</div>
+    <div class="bar"><div id="hud-thr-fill"></div></div>
+  </div>
+  <div id="hud-warn"></div>
+</div>
+
+<!-- TITLE -->
+<div class="screen visible" id="screen-title">
+  <h1 class="game-title">SKYHAWK</h1>
+  <div class="game-sub">ISLAND COURIER</div>
+  <p class="game-tag">One prop plane, one tropical island, three sorties. Thread the rings, mind your fuel, and bring her home on the strip — gently.</p>
+  <div class="missions">
+    <div class="mission-card" data-mission="0"><div class="num">MISSION 1 — PRESS 1</div><h3>RING RUN</h3><p>Thread all 8 rings around the island. Fastest clean run wins.</p></div>
+    <div class="mission-card" data-mission="1"><div class="num">MISSION 2 — PRESS 2</div><h3>RUNWAY TOUCH</h3><p>Take off, fly the circuit, land back on the strip. Gentle wins.</p></div>
+    <div class="mission-card" data-mission="2"><div class="num">MISSION 3 — PRESS 3</div><h3>STORM COURIER</h3><p>Deliver through 5 rings on a thirsty tank. Grab fuel cans on the way.</p></div>
+  </div>
+  <button class="btn" id="btn-start">FLY MISSION 1</button>
+  <div class="keys">
+    <b>W</b>/<b>S</b> throttle &nbsp; <b>↑</b><b>↓</b> pitch &nbsp; <b>←</b><b>→</b> bank &nbsp; <b>A</b>/<b>D</b> rudder &nbsp; drag mouse to steer<br>
+    <b>C</b> cockpit view &nbsp; <b>P</b> pause &nbsp; <b>R</b> restart &nbsp; <b>M</b> mute &nbsp; <b>Enter</b> start
+  </div>
+</div>
+
+<!-- PAUSE -->
+<div class="screen" id="screen-pause">
+  <h2 class="end-title">PAUSED</h2>
+  <p class="end-score">The island will wait. The fuel will not.</p>
+  <div class="row">
+    <button class="btn" id="btn-resume">RESUME</button>
+    <button class="btn ghost" id="btn-quit">QUIT TO MENU</button>
+  </div>
+</div>
+
+<!-- MISSION END -->
+<div class="screen" id="screen-end">
+  <h2 class="end-title" id="end-title">MISSION COMPLETE</h2>
+  <p class="end-score" id="end-score"></p>
+  <div class="row">
+    <button class="btn" id="btn-again">FLY AGAIN</button>
+    <button class="btn ghost" id="btn-menu">MENU</button>
+  </div>
+</div>
+
+<!-- CRASH -->
+<div class="screen" id="screen-crash">
+  <h2 class="end-title" id="crash-title">CRASHED</h2>
+  <p class="end-score" id="crash-score"></p>
+  <div class="row">
+    <button class="btn" id="btn-retry">TRY AGAIN</button>
+    <button class="btn ghost" id="btn-crash-menu">MENU</button>
+  </div>
+</div>
+
+<script type="importmap">{"imports": {"three": "./vendor/three.module.min.js"}}</script>
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>
